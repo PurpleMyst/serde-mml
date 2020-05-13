@@ -320,6 +320,17 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
             format_args!("serde://struct_variant/{}/{}/{}", name, variant, len),
         )
     }
+
+    fn collect_str<T: ?Sized>(self, s: &T) -> Result<Self::Ok, Self::Error>
+    where
+        T: fmt::Display,
+    {
+        self.ser_link(s, "serde://string")
+    }
+
+    fn is_human_readable(&self) -> bool {
+        true
+    }
 }
 
 impl<'ser, W: Write> ser::SerializeSeq for SublistSerializer<'ser, W> {

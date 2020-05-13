@@ -131,7 +131,7 @@ impl<W: Write> Writer<W> {
     ) -> io::Result<()> {
         self.bullet(list)?;
         write!(self.output, "[")?;
-        self.escaped(format!("{}", text))?;
+        self.escaped(text)?;
         writeln!(self.output, "]({})", uri)?;
         Ok(())
     }

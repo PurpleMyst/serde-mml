@@ -168,6 +168,13 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
         serialize_f64: f64,
     }
 
+    serde::serde_if_integer128! {
+        serialize_int! {
+            serialize_i128: i128,
+            serialize_u128: u128,
+        }
+    }
+
     fn serialize_char(self, ch: char) -> Result<Self::Ok, Self::Error> {
         self.ser_link(ch, "serde://char")
     }

@@ -33,6 +33,33 @@ impl Bullet {
     }
 }
 
+pub struct EscapedFormatter<W: Write> {
+    output: W,
+    error: Option<io::Error>,
+}
+
+impl<W: Write> fmt::Write for EscapedFormatter<W> {
+    fn write_char(&mut self, ch: char) -> fmt::Result {
+        let result = if ch.is_ascii_punctuation() {
+            write!(self.output, "\\{}", ch)
+        } else {
+            write!(self.output, "{}", ch)
+        };
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.error = Some(error);
+                Err(fmt::Error)
+            }
+        }
+    }
+
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        s.chars().try_for_each(|ch| self.write_char(ch))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct List {
     depth: usize,
@@ -70,15 +97,16 @@ impl<W: Write> Writer<W> {
         })
     }
 
-    // XXX: We might be able to write this zero-alloc style if we use `std::fmt::Write`
-    fn escaped<S: IntoIterator<Item = char>>(&mut self, s: S) -> io::Result<()> {
-        s.into_iter().try_for_each(|ch| {
-            if ch.is_ascii_punctuation() {
-                write!(self.output, "\\{}", ch)
-            } else {
-                write!(self.output, "{}", ch)
-            }
-        })
+    fn escaped<T: fmt::Display>(&mut self, value: T) -> io::Result<()> {
+        use fmt::Write;
+        let mut formatter = EscapedFormatter {
+            output: &mut self.output,
+            error: None,
+        };
+        match formatter.write_fmt(format_args!("{}", value)) {
+            Ok(()) => Ok(()),
+            Err(fmt::Error) => Err(formatter.error.unwrap()),
+        }
     }
 
     fn bullet(&mut self, list: Option<&mut List>) -> io::Result<()> {
@@ -103,7 +131,7 @@ impl<W: Write> Writer<W> {
     ) -> io::Result<()> {
         self.bullet(list)?;
         write!(self.output, "[")?;
-        self.escaped(format!("{}", text).chars())?;
+        self.escaped(format!("{}", text))?;
         writeln!(self.output, "]({})", uri)?;
         Ok(())
     }

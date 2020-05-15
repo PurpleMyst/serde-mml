@@ -1,3 +1,3 @@
-mod md;
+pub mod md;
 
 pub mod ser;

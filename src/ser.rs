@@ -1,22 +1,24 @@
 use std::fmt;
-use std::io::{self, prelude::*};
+use std::io::prelude::*;
 
 use serde::ser;
 
+use crate::error::Error;
 use crate::md::{List, Writer};
+use crate::ty::Type;
 
 pub struct Serializer<W: Write> {
     writer: Writer<W>,
     list: Option<List>,
 }
 
-pub struct SublistSerializer<'a, W: Write> {
-    serializer: &'a mut Serializer<W>,
+pub struct SublistSerializer<'ser, W: Write> {
+    serializer: &'ser mut Serializer<W>,
     parent: Option<List>,
 }
 
-pub struct MapSerializer<'a, W: Write> {
-    serializer: &'a mut Serializer<W>,
+pub struct MapSerializer<'ser, W: Write> {
+    serializer: &'ser mut Serializer<W>,
     parent: Option<List>,
     map: Option<List>,
 }
@@ -29,67 +31,63 @@ impl<W: Write> Serializer<W> {
         }
     }
 
-    fn ser_link<Text, Uri>(&mut self, text: Text, uri: Uri) -> Result<(), Error>
+    fn ser_primitive<Value>(&mut self, value: Value, ty: Type) -> Result<(), Error>
     where
-        Text: fmt::Display,
-        Uri: fmt::Display,
+        Value: fmt::Display,
     {
-        self.writer.link(self.list.as_mut(), text, uri)?;
+        self.writer.link(self.list.as_mut(), value, ty)?;
         Ok(())
     }
 
-    fn ser_ordered_list<Text, Uri, Value>(
+    fn ser_newtype<TypeName, Value>(
         &mut self,
-        text: Text,
-        uri: Uri,
+        ty_name: TypeName,
+        ty: Type,
         value: &Value,
     ) -> Result<(), Error>
     where
-        Text: fmt::Display,
-        Uri: fmt::Display,
+        TypeName: fmt::Display,
         Value: ?Sized + ser::Serialize,
     {
         let mut parent = self.list.take();
         let sublist = self.writer.ordered_list(parent.as_mut())?;
         self.list = Some(sublist);
-        self.ser_link(text, uri)?;
+        self.ser_primitive(ty_name, ty)?;
         value.serialize(&mut *self)?;
         self.list = parent;
         Ok(())
     }
 
-    fn ser_seq<'a, Text, Uri>(
-        &'a mut self,
-        text: Text,
-        uri: Uri,
-    ) -> Result<SublistSerializer<'a, W>, Error>
+    fn ser_seq<'ser, SeqName>(
+        &'ser mut self,
+        seq_name: SeqName,
+        ty: Type,
+    ) -> Result<SublistSerializer<'ser, W>, Error>
     where
-        Text: fmt::Display,
-        Uri: fmt::Display,
+        SeqName: fmt::Display,
     {
         let mut parent = self.list.take();
         let sublist = self.writer.ordered_list(parent.as_mut())?;
         self.list = Some(sublist);
-        self.ser_link(text, uri)?;
+        self.ser_primitive(seq_name, ty)?;
         Ok(SublistSerializer {
             serializer: self,
             parent,
         })
     }
 
-    fn ser_map<'a, Text, Uri>(
-        &'a mut self,
-        text: Text,
-        uri: Uri,
-    ) -> Result<MapSerializer<'a, W>, Error>
+    fn ser_map<'ser, MapName>(
+        &'ser mut self,
+        map_name: MapName,
+        ty: Type,
+    ) -> Result<MapSerializer<'ser, W>, Error>
     where
-        Text: fmt::Display,
-        Uri: fmt::Display,
+        MapName: fmt::Display,
     {
         let mut parent = self.list.take();
         let sublist = self.writer.unordered_list(parent.as_mut())?;
         self.list = Some(sublist);
-        self.ser_link(text, uri)?;
+        self.ser_primitive(map_name, ty)?;
         Ok(MapSerializer {
             serializer: self,
             parent,
@@ -98,40 +96,11 @@ impl<W: Write> Serializer<W> {
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
-    IOError(io::Error),
-    CustomSerializeError(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::IOError(error) => error.fmt(f),
-            Error::CustomSerializeError(msg) => msg.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Self::IOError(error)
-    }
-}
-
-impl ser::Error for Error {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        Self::CustomSerializeError(msg.to_string())
-    }
-}
-
 macro_rules! serialize_int {
-    ($($name:ident: $ty:ty,)*) => {
+    ($($name:ident: $ty:ty => $enum_ty:expr,)*) => {
         $(
         fn $name(self, num: $ty) -> Result<Self::Ok, Self::Error> {
-            self.ser_link(num, concat!("serde://", stringify!($ty)))
+            self.ser_primitive(num, $enum_ty)
         }
         )*
     };
@@ -150,63 +119,61 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     type SerializeStructVariant = MapSerializer<'ser, W>;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        self.writer
-            .link(self.list.as_mut(), format_args!("{}", v), "serde://bool")?;
-        Ok(())
+        self.ser_primitive(v, Type::Bool)
     }
 
     serialize_int! {
-        serialize_i8: i8,
-        serialize_i16: i16,
-        serialize_i32: i32,
-        serialize_i64: i64,
-        serialize_u8: u8,
-        serialize_u16: u16,
-        serialize_u32: u32,
-        serialize_u64: u64,
-        serialize_f32: f32,
-        serialize_f64: f64,
+        serialize_i8: i8 => Type::I8,
+        serialize_i16: i16 => Type::I16,
+        serialize_i32: i32 => Type::I32,
+        serialize_i64: i64 => Type::I64,
+        serialize_u8: u8 => Type::U8,
+        serialize_u16: u16 => Type::U16,
+        serialize_u32: u32 => Type::U32,
+        serialize_u64: u64 => Type::U64,
+        serialize_f32: f32 => Type::F32,
+        serialize_f64: f64 => Type::F64,
     }
 
     serde::serde_if_integer128! {
         serialize_int! {
-            serialize_i128: i128,
-            serialize_u128: u128,
+            serialize_i128: i128 => Type::I128,
+            serialize_u128: u128 => Type::U128,
         }
     }
 
     fn serialize_char(self, ch: char) -> Result<Self::Ok, Self::Error> {
-        self.ser_link(ch, "serde://char")
+        self.ser_primitive(ch, Type::Char)
     }
 
     fn serialize_str(self, s: &str) -> Result<Self::Ok, Self::Error> {
-        self.ser_link(s, "serde://string")
+        self.ser_primitive(s, Type::String)
     }
 
     fn serialize_bytes(self, buf: &[u8]) -> Result<Self::Ok, Self::Error> {
         // not worth it to make a ser_bytes_link
         self.writer
-            .bytes_link(self.list.as_mut(), buf, "serde://bytes")?;
+            .bytes_link(self.list.as_mut(), buf, Type::Bytes)?;
         Ok(())
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        self.ser_link("None", "serde://option/none")
+        self.ser_primitive("None", Type::None)
     }
 
     fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: ser::Serialize,
     {
-        self.ser_ordered_list("Some", "serde://option/some", value)
+        self.ser_newtype("Some", Type::Some, value)
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        self.ser_link("()", "serde://unit")
+        self.ser_primitive("()", Type::Unit)
     }
 
     fn serialize_unit_struct(self, name: &'static str) -> Result<Self::Ok, Self::Error> {
-        self.ser_link("name", format_args!("serde://unit_struct/{}", name))
+        self.ser_primitive("name", Type::UnitStruct(name))
     }
 
     fn serialize_unit_variant(
@@ -215,9 +182,9 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
-        self.ser_link(
+        self.ser_primitive(
             format_args!("{}::{}", name, variant),
-            format_args!("serde://unit_variant/{}/{}", name, variant),
+            Type::UnitVariant(name, variant),
         )
     }
 
@@ -229,7 +196,7 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     where
         T: ser::Serialize,
     {
-        self.ser_ordered_list(name, format_args!("serde://newtype_struct/{}", name), value)
+        self.ser_newtype(name, Type::NewtypeStruct(name), value)
     }
 
     fn serialize_newtype_variant<T: ?Sized>(
@@ -242,31 +209,22 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     where
         T: ser::Serialize,
     {
-        self.ser_ordered_list(
+        self.ser_newtype(
             format_args!("{}::{}", name, variant),
-            format_args!("serde://newtype_variant/{}/{}", name, variant),
+            Type::NewtypeVariant(name, variant),
             value,
         )
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         match len {
-            Some(len) => self.ser_seq(
-                format_args!("Seq of length {}", len),
-                format_args!("serde://seq/{}", len),
-            ),
-            None => self.ser_seq(
-                format_args!("Seq of unknown length"),
-                format_args!("serde://seq/"),
-            ),
+            Some(len) => self.ser_seq(format_args!("Seq of length {}", len), Type::Seq(Some(len))),
+            None => self.ser_seq(format_args!("Seq of unknown length"), Type::Seq(None)),
         }
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        self.ser_seq(
-            format_args!("Tuple of length {}", len),
-            format_args!("serde://tuple/{}", len),
-        )
+        self.ser_seq(format_args!("Tuple of length {}", len), Type::Tuple(len))
     }
 
     fn serialize_tuple_struct(
@@ -276,7 +234,7 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
         self.ser_seq(
             format_args!("Tuple struct {} of length {}", name, len),
-            format_args!("serde://tuple_struct/{}/{}", name, len),
+            Type::TupleStruct(name, len),
         )
     }
 
@@ -289,18 +247,14 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         self.ser_seq(
             format_args!("Tuple variant {}::{} of length {}", name, variant, len),
-            format_args!("serde://tuple_variant/{}/{}/{}", name, variant, len),
+            Type::TupleVariant(name, variant, len),
         )
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        if let Some(len) = len {
-            self.ser_map(
-                format_args!("Map of length {}", len),
-                format_args!("serde://map/{}", len),
-            )
-        } else {
-            self.ser_map("Map of unknown length", "serde://map")
+        match len {
+            Some(len) => self.ser_map(format_args!("Map of length {}", len), Type::Map(Some(len))),
+            None => self.ser_map("Map of unknown length", Type::Map(None)),
         }
     }
 
@@ -311,7 +265,7 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     ) -> Result<Self::SerializeStruct, Self::Error> {
         self.ser_map(
             format_args!("Struct {} of length {}", name, len),
-            format_args!("serde://struct/{}/{}", name, len),
+            Type::Struct(name, len),
         )
     }
 
@@ -324,7 +278,7 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
         self.ser_map(
             format_args!("Struct variant {}::{} of length {}", name, variant, len),
-            format_args!("serde://struct_variant/{}/{}/{}", name, variant, len),
+            Type::StructVariant(name, variant, len),
         )
     }
 
@@ -332,7 +286,7 @@ impl<'ser, W: Write> ser::Serializer for &'ser mut Serializer<W> {
     where
         T: fmt::Display,
     {
-        self.ser_link(s, "serde://string")
+        self.ser_primitive(s, Type::String)
     }
 
     fn is_human_readable(&self) -> bool {

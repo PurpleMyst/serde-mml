@@ -3,30 +3,22 @@ use std::io;
 
 use serde::{de, ser};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    IOError(io::Error),
+    #[error("{0}")]
+    IOError(#[from] io::Error),
+
+    #[error("{0}")]
     CustomSerializeError(String),
+
+    #[error("{0}")]
     CustomDeserializeError(String),
+
+    #[error("{0}")]
+    TypeParseError(#[from] crate::ty::ParseError),
+
+    #[error("Unexpected EOF")]
     UnexpectedEOF,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::IOError(error) => error.fmt(f),
-            Error::CustomSerializeError(msg) | Error::CustomDeserializeError(msg) => msg.fmt(f),
-            Error::UnexpectedEOF => f.pad("Unexpected EOF"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Self::IOError(error)
-    }
 }
 
 impl ser::Error for Error {

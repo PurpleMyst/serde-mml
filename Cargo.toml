@@ -1,6 +1,6 @@
 [package]
 name = "serde-mml"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["PurpleMyst <PurpleMyst@users.noreply.github.com>"]
 edition = "2018"
 

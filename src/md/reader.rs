@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::str::Chars;
 
 pub struct Reader<'a> {
@@ -5,9 +6,9 @@ pub struct Reader<'a> {
     indents: Vec<usize>,
     state: State,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item<'a> {
-    Link { text: &'a str, uri: &'a str },
+    Link { text: Cow<'a, str>, uri: &'a str },
     PushOrderedList,
     PushUnorderedList,
     PopList,
@@ -27,6 +28,47 @@ impl<'a> Reader<'a> {
             indents: vec![],
             state: State::BeforeItem,
         }
+    }
+
+    fn link_text(&mut self) -> Option<Cow<'a, str>> {
+        // Parse out the text of the link, with escapes
+        // We must be careful to not consider \] as an escape
+        let mut escaped = false;
+        let mut found_escape: bool = false;
+        let start = self.chars.as_str();
+        self.chars.by_ref().find(|&ch| {
+            if !escaped && ch == '\\' {
+                escaped = true;
+                found_escape = true;
+                return false;
+            }
+            let found = !escaped && ch == ']';
+            escaped = false;
+            found
+        })?;
+        let end = self.chars.as_str();
+
+        let text = &start[..start.len() - end.len() - ']'.len_utf8()];
+
+        Some(if found_escape {
+            let mut escaped = false;
+            Cow::Owned(
+                text.chars()
+                    .filter_map(|ch| {
+                        if !escaped && ch == '\\' {
+                            escaped = true;
+                            found_escape = true;
+                            return None;
+                        }
+                        escaped = false;
+                        Some(ch)
+                    })
+                    .collect::<String>(),
+            )
+        } else {
+            // If we've found no escapes, we can pass this through verbatim
+            Cow::Borrowed(text)
+        })
     }
 
     /// Return the portion of the input string until the given char
@@ -117,10 +159,8 @@ impl<'a> Iterator for Reader<'a> {
 
                         // This item a link, parse it
                         '[' => {
-                            let text = self.take_chars_until(']')?;
-                            if self.chars.next() != Some('(') {
-                                break None;
-                            }
+                            let text = self.link_text()?;
+                            assert_eq!(self.chars.next(), Some('('));
                             let uri = self.take_chars_until(')')?;
                             self.take_chars_until('\n')?;
                             self.state = State::BeforeItem;

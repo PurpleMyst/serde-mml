@@ -100,7 +100,7 @@ impl fmt::Display for Type<'_> {
 }
 
 impl<'a> Type<'a> {
-    fn from_str(s: &'a str) -> Result<Self, ParseError> {
+    pub fn from_str(s: &'a str) -> Result<Self, ParseError> {
         if !s.starts_with("serde://") {
             return Err(ParseError::UnknownSchema);
         }

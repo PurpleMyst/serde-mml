@@ -38,9 +38,13 @@ pub struct EscapedFormatter<W: Write> {
     error: Option<io::Error>,
 }
 
+fn should_escape(ch: char) -> bool {
+    ch.is_ascii_punctuation()
+}
+
 impl<W: Write> fmt::Write for EscapedFormatter<W> {
     fn write_char(&mut self, ch: char) -> fmt::Result {
-        let result = if ch.is_ascii_punctuation() {
+        let result = if should_escape(ch) {
             write!(self.output, "\\{}", ch)
         } else {
             write!(self.output, "{}", ch)

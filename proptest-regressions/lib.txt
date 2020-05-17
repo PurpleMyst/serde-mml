@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 67e385ee7929bc6c0c8a41dd82ae11ba85b26570d8779a257eb31eb867b3cee6 # shrinks to value = I16(-1)
+cc 72faa312f473130b1fad9f4014ab845a32f53a5a04be1e00ebbc947395708cf4 # shrinks to value1 = I16(-1), value2 = Bool(false)
+cc 7273397aadb6cbc25219a35003029fa891ea5ad61165b704e06d7273bed2b77e # shrinks to value = Char(':')
+cc 11ca7a97aed39093cbf8aaff7f858dd8103210f2d42dbc42784c5544eb03dbb4 # shrinks to value1 = Bool(false), value2 = String("]")

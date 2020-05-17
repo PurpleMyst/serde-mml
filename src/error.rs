@@ -17,6 +17,21 @@ pub enum Error {
     #[error("{0}")]
     TypeParseError(#[from] crate::ty::ParseError),
 
+    #[error("{0}")]
+    ParseCharError(#[from] std::char::ParseCharError),
+
+    #[error("{0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+
+    #[error("{0}")]
+    ParseBoolError(#[from] std::str::ParseBoolError),
+
+    #[error("{0}")]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+
+    #[error("{0}")]
+    B64DecodeError(#[from] base64::DecodeError),
+
     #[error("Unexpected EOF")]
     UnexpectedEOF,
 }
@@ -32,3 +47,5 @@ impl de::Error for Error {
         Self::CustomDeserializeError(msg.to_string())
     }
 }
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
